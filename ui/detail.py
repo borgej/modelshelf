@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QCompleter, QDialog, QFrame, QGridLayout, QHBoxLa
                                QVBoxLayout, QWidget)
 
 from core.db import Item
+from core.system import FILE_MANAGER, TRASH, slicer_takes_zip
 from core.mesh import fmt_date
 from core.settings import Settings, estimate_grams
 from ui import icons, theme
@@ -194,7 +195,7 @@ class DetailPanel(QFrame):
         arow.setSpacing(6)
         self.b_open = icon_button("open", "Open with the default app (Enter)", "Open", size=15)
         self.b_slicer = icon_button("slicer", "Open in your slicer", "Slicer", size=15)
-        self.b_explorer = icon_button("explorer", "Show in File Explorer", "", size=15)
+        self.b_explorer = icon_button("explorer", f"Show in {FILE_MANAGER}", "", size=15)
         self.b_more = icon_button("more", "More actions", "", size=15)
         for b in (self.b_open, self.b_slicer, self.b_explorer, self.b_more):
             arow.addWidget(b)
@@ -307,8 +308,7 @@ class DetailPanel(QFrame):
         self.b_slicer.setText(name if self.s.slicer_path else "Slicer")
         self.b_slicer.setToolTip(f"Open in {name}   (Ctrl+O)" + (" — models inside the ZIP are unpacked to a temp folder first"
                                                       if any(i.kind == "ZIP" for i in items)
-                                                      and not self.s.slicer_path.lower().endswith(
-                                                          ("elegoo-slicer.exe", "orca-slicer.exe")) else "")
+                                                      and not slicer_takes_zip(self.s.slicer_path) else "")
                                  if self.s.slicer_path else "Choose your slicer in Settings to enable this")
         self._fill_facts(items)
         self._fill_tags(items)
@@ -461,6 +461,6 @@ class DetailPanel(QFrame):
         m.addAction(icons.icon("copy"), "Copy path", lambda: self.action.emit("copy_path", self.items))
         m.addAction(icons.icon("refresh"), "Re-analyse / re-render", lambda: self.action.emit("reanalyze", self.items))
         m.addSeparator()
-        m.addAction(icons.icon("trash", color=theme.C["danger"]), "Move to Recycle Bin…",
+        m.addAction(icons.icon("trash", color=theme.C["danger"]), f"Move to {TRASH}…",
                     lambda: self.action.emit("recycle", self.items))
         m.exec(self.b_more.mapToGlobal(self.b_more.rect().bottomLeft()))

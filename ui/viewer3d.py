@@ -149,7 +149,8 @@ class ModelViewer(QOpenGLWidget):
     def initializeGL(self):
         try:
             import moderngl
-            self.ctx = moderngl.create_context()
+            from core.system import attach_gl_context
+            self.ctx = attach_gl_context()
             self.prog = self.ctx.program(vertex_shader=VERT, fragment_shader=FRAG)
             if self.mesh is not None and self.vao is None:
                 data = vertex_data(self.mesh, self.default_rgb)       # context is current here

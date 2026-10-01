@@ -1,4 +1,4 @@
-"""Regenerates the README screenshots from a folder of models.
+r"""Regenerates the README screenshots from a folder of models.
 
     python tools/make_screenshots.py "D:\path\to\some models"
 
@@ -31,6 +31,8 @@ def main(library: str) -> None:
     fmt.setSamples(4)
     QSurfaceFormat.setDefaultFormat(fmt)
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+    from core.system import prepare_qt
+    prepare_qt()
     app = QApplication(sys.argv)
 
     from core.settings import Settings, save

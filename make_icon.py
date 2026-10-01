@@ -1,4 +1,5 @@
-"""Writes ModelShelf.ico from the same drawing the app uses for its window icon."""
+"""Writes ModelShelf.ico (Windows) and ModelShelf.png (Linux menu entry) from
+the same drawing the app uses for its window icon."""
 
 import sys
 
@@ -16,7 +17,8 @@ def main(path: str = "ModelShelf.ico") -> None:
     app_icon_pixmap(256).save(buf, "PNG")
     img = Image.open(io.BytesIO(bytes(buf.data())))
     img.save(path, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    print(f"wrote {path}")
+    img.save("ModelShelf.png")
+    print(f"wrote {path} and ModelShelf.png")
 
 
 if __name__ == "__main__":

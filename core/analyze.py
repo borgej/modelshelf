@@ -29,11 +29,8 @@ MAX_GCODE_TOOLPATH_BYTES = 250 * 1024 * 1024
 
 def _init_worker(low_priority: bool) -> None:
     if low_priority:
-        try:
-            import psutil
-            psutil.Process().nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-        except Exception:
-            pass
+        from core.system import lower_priority
+        lower_priority()
 
 
 def _hash_file(path: str) -> str:

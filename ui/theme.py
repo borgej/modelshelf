@@ -47,8 +47,13 @@ KIND_COLORS = {
 R_SM = 2     # badges, list rows, checkboxes
 R_MD = 4     # buttons, inputs, cards, panels
 
-FONT = "Segoe UI Variable Text, Segoe UI"
-MONO = "Cascadia Mono, Consolas"
+# First family that exists wins, so each system gets its own UI font.
+FONT_FAMILIES = ["Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "Ubuntu", "Cantarell",
+                 "DejaVu Sans", "Helvetica Neue", "sans-serif"]
+MONO_FAMILIES = ["Cascadia Mono", "Consolas", "JetBrains Mono", "DejaVu Sans Mono", "Liberation Mono",
+                 "Menlo", "monospace"]
+FONT = ", ".join(f"'{f}'" for f in FONT_FAMILIES)
+MONO = ", ".join(f"'{f}'" for f in MONO_FAMILIES)
 
 C: dict[str, str] = dict(DARK)
 MODE = "dark"
@@ -210,6 +215,7 @@ def stylesheet() -> str:
     QTreeWidget::item:selected, QListWidget::item:selected {{ background: {c['accent_subtle']};
                                                               color: {c['accent']}; }}
     QTreeView::branch {{ background: transparent; }}
+    QTreeView::branch:selected {{ background: {c['accent_subtle']}; }}
 
     QScrollArea {{ border: none; background: transparent; }}
     QScrollArea > QWidget > QWidget {{ background: transparent; }}

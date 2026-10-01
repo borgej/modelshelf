@@ -173,7 +173,8 @@ def test_weight_estimate():
 def _gpu_available() -> bool:
     try:
         import moderngl
-        moderngl.create_standalone_context().release()
+        from core.system import standalone_gl_context
+        standalone_gl_context().release()
         return True
     except Exception:
         return False

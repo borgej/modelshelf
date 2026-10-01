@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ModelShelf
+GenericName=3D Model Library
+Comment=Local library for your 3D printing files
+Exec=modelshelf
+Icon=modelshelf
+Terminal=false
+Categories=Graphics;3DGraphics;Utility;
+Keywords=3D;print;STL;3MF;gcode;slicer;
+StartupWMClass=ModelShelf

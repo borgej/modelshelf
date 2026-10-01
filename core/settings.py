@@ -11,8 +11,8 @@ APP_NAME = "ModelShelf"
 
 
 def data_dir() -> Path:
-    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    d = Path(os.environ.get("MODELSHELF_HOME", Path(base) / APP_NAME))
+    from core.system import user_data_dir
+    d = Path(os.environ.get("MODELSHELF_HOME") or user_data_dir(APP_NAME))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -65,16 +65,7 @@ class Settings:
         return max(2, min(12, (os.cpu_count() or 4) - 2))
 
 
-SLICER_NAMES = {
-    "elegoo-slicer": "ElegooSlicer", "orca-slicer": "OrcaSlicer", "bambu-studio": "Bambu Studio",
-    "prusa-slicer": "PrusaSlicer", "superslicer": "SuperSlicer", "ultimaker-cura": "Cura",
-    "crealityprint": "Creality Print", "anycubicslicer": "Anycubic Slicer",
-}
-
-
-def slicer_name(path: str) -> str:
-    stem = Path(path).stem.lower()
-    return SLICER_NAMES.get(stem, Path(path).stem if path else "slicer")
+from core.system import slicer_name  # noqa: E402,F401  (re-exported)
 
 
 def _path() -> Path:

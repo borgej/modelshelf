@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import datetime as dt
 import os
 import subprocess
@@ -16,12 +15,13 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHB
                                QSlider, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from core.db import Library
+from core.system import FILE_MANAGER, TRASH, find_slicers, reveal, slicer_takes_zip
 from core.mesh import fmt_date
 from core.scanner import Scanner, ScanStats
 from core.settings import Settings, estimate_grams, save as save_settings, slicer_name, thumbs_dir
 from ui import icons, theme
 from ui.detail import DetailPanel
-from ui.dialogs import DuplicatesDialog, LogWindow, SettingsDialog
+from ui.dialogs import AboutDialog, COFFEE_URL, DuplicatesDialog, LogWindow, SettingsDialog
 from ui.grid import LibraryGrid, fmt_size
 from ui.library_model import SORTS, LibraryModel, ThumbCache
 from ui.sidebar import Sidebar
@@ -96,7 +96,6 @@ class MainWindow(QMainWindow):
             self.splitter.restoreState(QByteArray.fromBase64(settings.splitter_state.encode()))
 
         if not self.s.slicer_path:
-            from ui.dialogs import find_slicers
             found = find_slicers()
             if found:
                 self.s.slicer_path = found[0]
@@ -155,8 +154,6 @@ class MainWindow(QMainWindow):
         hl.addStretch()
         self.b_dupes = icon_button("copies", "Find files with identical content", "Duplicates")
         self.b_dupes.clicked.connect(self.show_duplicates)
-        self.b_export = icon_button("export", "Export the models in view to CSV", "Export")
-        self.b_export.clicked.connect(self.export_csv)
         self.b_log = icon_button("log", "Show the log", variant="ghost")
         self.b_log.clicked.connect(self.log_window.show)
         self.b_theme = icon_button("moon", "Switch theme", variant="ghost")
@@ -165,10 +162,16 @@ class MainWindow(QMainWindow):
         self.b_printer.clicked.connect(self.open_printer)
         self.b_settings = icon_button("sliders", "Settings", variant="ghost")
         self.b_settings.clicked.connect(self.open_settings)
+        self.b_about = icon_button("info", "About ModelShelf", variant="ghost")
+        self.b_about.clicked.connect(self.show_about)
+        self.b_coffee = icon_button("coffee", f"Like ModelShelf? Buy me a coffee\n{COFFEE_URL}", variant="ghost")
+        self.b_coffee.setProperty("icon_color", "warning")
+        self.b_coffee.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(COFFEE_URL)))
         self.b_scan = icon_button("refresh", "Look for new and changed files (F5)", "Scan library", variant="primary")
         self.b_scan.setProperty("icon_color", "accent_text")
         self.b_scan.clicked.connect(self.start_scan)
-        for b in (self.b_printer, self.b_dupes, self.b_export, self.b_log, self.b_theme, self.b_settings, self.b_scan):
+        for b in (self.b_printer, self.b_dupes, self.b_log, self.b_theme, self.b_settings, self.b_about, self.b_coffee,
+                  self.b_scan):
             hl.addWidget(b)
         root.addWidget(header)
 
@@ -508,7 +511,7 @@ class MainWindow(QMainWindow):
             self.log(f"Opened in {slicer_name(self.s.slicer_path)}: " + ", ".join(os.path.basename(f) for f in files))
             self.statusBar().showMessage(f"Opening {len(files)} file(s) in {slicer_name(self.s.slicer_path)}…", 4000)
         elif name == "explorer":
-            subprocess.Popen(["explorer", "/select,", os.path.normpath(items[0].path)])
+            reveal(items[0].path)
         elif name == "copied_path":
             self.statusBar().showMessage("Path copied", 2500)
         elif name == "copy_path":
@@ -532,7 +535,7 @@ class MainWindow(QMainWindow):
         from core.formats import MESH_EXTS, GCODE_EXTS
         out = []
         # ElegooSlicer and OrcaSlicer import .zip downloads themselves.
-        takes_zip = os.path.basename(self.s.slicer_path).lower() in ("elegoo-slicer.exe", "orca-slicer.exe")
+        takes_zip = slicer_takes_zip(self.s.slicer_path)
         for it in items:
             if it.kind in ("STL", "3MF", "OBJ", "GCODE") or (it.kind == "ZIP" and takes_zip):
                 out.append(it.path)
@@ -578,7 +581,7 @@ class MainWindow(QMainWindow):
         a = m.addAction(icons.icon("slicer"), f"Open in {slicer_name(self.s.slicer_path)}	Ctrl+O",
                         lambda: self._act("slicer", items))
         a.setEnabled(bool(self.s.slicer_path))
-        m.addAction(icons.icon("explorer"), "Show in File Explorer\tCtrl+E", lambda: self._act("explorer", items))
+        m.addAction(icons.icon("explorer"), f"Show in {FILE_MANAGER}\tCtrl+E", lambda: self._act("explorer", items))
         m.addAction(icons.icon("copy"), "Copy path\tCtrl+Shift+C", lambda: self._act("copy_path", items))
         m.addSeparator()
         in_q = all(i.status == "to_print" for i in items)
@@ -591,7 +594,7 @@ class MainWindow(QMainWindow):
         m.addAction(icons.icon("star"), "Remove favourite" if fav else "Favourite", lambda: self._act("favorite", items))
         m.addSeparator()
         m.addAction(icons.icon("refresh"), "Re-analyse", lambda: self._act("reanalyze", items))
-        m.addAction(icons.icon("trash", color=theme.C["danger"]), "Move to Recycle Bin…\tDel",
+        m.addAction(icons.icon("trash", color=theme.C["danger"]), f"Move to {TRASH}…\tDel",
                     lambda: self._act("recycle", items))
         m.exec(self.grid.viewport().mapToGlobal(pos))
 
@@ -600,9 +603,9 @@ class MainWindow(QMainWindow):
         size = sum(i.size or 0 for i in items)
         names = "\n".join(f"  • {i.name}" for i in items[:8]) + (f"\n  … and {n - 8} more" if n > 8 else "")
         if QMessageBox.question(
-                self, "Move to Recycle Bin",
-                f"Move {n} file{'s' if n != 1 else ''} ({fmt_size(size)}) to the Windows Recycle Bin?\n\n{names}\n\n"
-                "You can restore them from the Recycle Bin.") != QMessageBox.Yes:
+                self, f"Move to {TRASH}",
+                f"Move {n} file{'s' if n != 1 else ''} ({fmt_size(size)}) to the {TRASH}?\n\n{names}\n\n"
+                f"You can restore them from the {TRASH}.") != QMessageBox.Yes:
             return False
         from send2trash import send2trash
         done = []
@@ -610,7 +613,7 @@ class MainWindow(QMainWindow):
             try:
                 send2trash(os.path.normpath(it.path))
                 done.append(it)
-                self.log(f"Moved to Recycle Bin: {it.path}")
+                self.log(f"Moved to {TRASH}: {it.path}")
             except Exception as exc:
                 self.log(f"Could not recycle {it.path}: {exc}")
                 QMessageBox.warning(self, "Could not move file", f"{it.path}\n\n{exc}")
@@ -754,6 +757,9 @@ class MainWindow(QMainWindow):
             if dlg.rerender or sorted(old_roots) != sorted(self.s.roots):
                 self.start_scan()
 
+    def show_about(self):
+        AboutDialog(__version__, os.path.dirname(self.lib.path), self).exec()
+
     def show_duplicates(self):
         dlg = DuplicatesDialog(list(self.model.items.values()), self.lib.ignored_duplicates(), self.thumbs, self)
         dlg.recycle.connect(self._dupes_recycle)
@@ -763,27 +769,6 @@ class MainWindow(QMainWindow):
 
     def _dupes_recycle(self, items):
         self.recycle(items)
-
-    def export_csv(self):
-        default = os.path.join(os.path.expanduser("~"), "Documents", f"ModelShelf-{dt.date.today()}.csv")
-        path, _ = QFileDialog.getSaveFileName(self, "Export to CSV", default, "CSV (*.csv)")
-        if not path:
-            return
-        cols = ["name", "path", "kind", "size_bytes", "modified", "width_mm", "depth_mm", "height_mm",
-                "volume_cm3", "est_grams", "sliced_grams", "print_time_min", "triangles", "designer",
-                "colors", "status", "favorite", "tags", "notes", "sha256"]
-        with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-            w = csv.writer(fh, delimiter=";" if _decimal_comma() else ",")
-            w.writerow(cols)
-            for i in self.model.visible:
-                g = estimate_grams(i.volume, i.area, self.s)
-                w.writerow([i.name, i.path, i.kind, i.size, fmt_date(i.mtime, with_time=True),
-                            _n(i.dim_x), _n(i.dim_y), _n(i.dim_z), _n(i.volume / 1000 if i.volume else None),
-                            _n(g), _n(i.sliced_weight), _n(i.print_time / 60 if i.print_time else None),
-                            i.triangles or "", i.designer, " ".join(i.colors), i.status, int(i.favorite),
-                            ", ".join(i.tags), i.notes, i.sha256])
-        self.statusBar().showMessage(f"Exported {len(self.model.visible)} models to {path}", 6000)
-        self.log(f"Exported CSV: {path}")
 
     def _theme_menu(self):
         m = QMenu(self)
@@ -841,18 +826,6 @@ class MainWindow(QMainWindow):
         super().closeEvent(e)
 
 
-def _n(v):
-    if v is None:
-        return ""
-    s = f"{v:.2f}"
-    return s.replace(".", ",") if _decimal_comma() else s
-
-
-def _decimal_comma() -> bool:
-    from PySide6.QtCore import QLocale
-    return QLocale.system().decimalPoint() == ","
-
-
 def _install_error_hook(win: "MainWindow") -> None:
     """In the windowed .exe there is no console, so an exception inside a button
     handler would vanish without a trace. Log it and tell the user instead."""
@@ -898,6 +871,8 @@ def _viewer_selftest(path: str) -> None:
 
 
 def run():
+    from core.system import prepare_qt
+    prepare_qt()
     from PySide6.QtGui import QSurfaceFormat
     fmt = QSurfaceFormat()
     fmt.setVersion(3, 3)

@@ -222,8 +222,12 @@ class Scanner:
         if total:
             workers = min(self.s.worker_count(), total)
             self.progress("analyze", 0, total, "")
+            # Always "spawn": forking a process that already runs Qt and holds
+            # OpenGL contexts (the Linux default) is not safe.
+            import multiprocessing
             with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
-                                     initargs=(self.s.low_priority,)) as pool:
+                                     initargs=(self.s.low_priority,),
+                                     mp_context=multiprocessing.get_context("spawn")) as pool:
                 pending = {}
                 queue = list(todo)
                 done_count = 0

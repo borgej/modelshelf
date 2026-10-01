@@ -141,7 +141,8 @@ class Renderer:
     def _ensure(self):
         if self._ctx is None:
             import moderngl
-            self._ctx = moderngl.create_standalone_context()
+            from core.system import standalone_gl_context
+            self._ctx = standalone_gl_context()
             self._prog = self._ctx.program(vertex_shader=VERT, fragment_shader=FRAG)
         return self._ctx
 

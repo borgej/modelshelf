@@ -6,8 +6,8 @@ import datetime as dt
 import glob
 import os
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QMessageBox, QPlainTextEdit,
@@ -23,29 +23,7 @@ from ui.widgets import hline, icon_button, label
 
 # --------------------------------------------------------------------------- slicers
 
-SLICER_GLOBS = [
-    r"C:\Program Files\ElegooSlicer\elegoo-slicer.exe",
-    r"C:\Program Files\Bambu Studio\bambu-studio.exe",
-    r"C:\Program Files\OrcaSlicer\orca-slicer.exe",
-    r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe",
-    r"C:\Program Files\Ultimaker Cura*\UltiMaker-Cura.exe",
-    r"C:\Program Files\Ultimaker Cura*\Ultimaker-Cura.exe",
-    r"C:\Program Files\Creality\Creality Print*\CrealityPrint.exe",
-    r"C:\Program Files\Anycubic Slicer*\AnycubicSlicer*.exe",
-    r"C:\Program Files\SuperSlicer*\superslicer.exe",
-]
-
-
-def find_slicers() -> list[str]:
-    found = []
-    for pattern in SLICER_GLOBS:
-        found.extend(glob.glob(pattern))
-    local = os.environ.get("LOCALAPPDATA", "")
-    for pattern in (r"Programs\*\*.exe",):
-        for p in glob.glob(os.path.join(local, pattern)):
-            if any(k in p.lower() for k in ("slicer", "cura", "bambu")) and "uninst" not in p.lower():
-                found.append(p)
-    return list(dict.fromkeys(found))
+from core.system import FILE_MANAGER, TRASH, find_slicers, slicer_browse_hint  # noqa: E402
 
 
 class SettingsDialog(QDialog):
@@ -160,7 +138,7 @@ class SettingsDialog(QDialog):
         self.slicer.setEditable(True)
         self.slicer.addItems(find_slicers())
         self.slicer.setCurrentText(s.slicer_path)
-        self.slicer.lineEdit().setPlaceholderText("Path to your slicer .exe")
+        self.slicer.lineEdit().setPlaceholderText("Path to your slicer program")
         browse = QPushButton("Browse…")
         browse.clicked.connect(self._browse_slicer)
         srow.addWidget(self.slicer, 1); srow.addWidget(browse)
@@ -213,7 +191,7 @@ class SettingsDialog(QDialog):
                 self.roots.addItem(d)
 
     def _browse_slicer(self):
-        f, _ = QFileDialog.getOpenFileName(self, "Choose slicer", r"C:\Program Files", "Programs (*.exe)")
+        f, _ = QFileDialog.getOpenFileName(self, "Choose slicer", *slicer_browse_hint())
         if f:
             self.slicer.setCurrentText(os.path.normpath(f))
 
@@ -298,8 +276,8 @@ class DuplicatesDialog(QDialog):
         foot.addStretch()
         close = QPushButton("Close")
         close.clicked.connect(self.accept)
-        self.go = icon_button("trash", "Move the selected files to the Windows Recycle Bin",
-                              "Move selected to Recycle Bin", variant="danger")
+        self.go = icon_button("trash", f"Move the selected files to the {TRASH}",
+                              f"Move selected to {TRASH}", variant="danger")
         self.go.clicked.connect(self._recycle)
         foot.addWidget(close); foot.addWidget(self.go)
         lay.addLayout(foot)
@@ -369,7 +347,7 @@ class DuplicatesDialog(QDialog):
                     k.setStyleSheet(f"color: {theme.C['success']}; border: 1px solid {theme.C['success']};"
                                     f"border-radius: {theme.R_SM}px; padding: 1px 6px; font-size: 11px;")
                     r.addWidget(k, 0, Qt.AlignVCenter)
-                show = icon_button("explorer", "Show in File Explorer", variant="ghost", size=14)
+                show = icon_button("explorer", f"Show in {FILE_MANAGER}", variant="ghost", size=14)
                 show.clicked.connect(lambda _=False, i=it: self.reveal.emit(i))
                 r.addWidget(show)
                 cl.addLayout(r)
@@ -452,3 +430,104 @@ class LogWindow(QDialog):
 
     def append(self, line: str):
         self.text.appendPlainText(line)
+
+
+# --------------------------------------------------------------------------- about
+
+REPO_URL = "https://github.com/borgej/modelshelf"
+COFFEE_URL = "https://buymeacoffee.com/beejeey"
+COFFEE_YELLOW = "#FFDD00"
+
+
+def coffee_button(text: str = "Buy me a coffee") -> QPushButton:
+    """The yellow support button. Opens the page in the user's browser."""
+    b = QPushButton(text)
+    b.setIcon(icons.icon("coffee", 18, "#1a1a1a"))
+    b.setIconSize(QSize(18, 18))
+    b.setCursor(Qt.PointingHandCursor)
+    b.setToolTip(f"Like ModelShelf? Buy the developer a coffee.\n{COFFEE_URL}")
+    b.setStyleSheet(
+        f"QPushButton {{ background: {COFFEE_YELLOW}; color: #1a1a1a; border: 1px solid #e6c700;"
+        f" border-radius: {theme.R_MD}px; padding: 7px 14px; font-weight: 700; }}"
+        "QPushButton:hover { background: #ffe433; }"
+        "QPushButton:pressed { background: #f0cf00; }")
+    b.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(COFFEE_URL)))
+    return b
+
+
+class AboutDialog(QDialog):
+    def __init__(self, version: str, data_folder: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About ModelShelf")
+        self.setFixedWidth(460)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(26, 24, 26, 20)
+        lay.setSpacing(12)
+
+        head = QHBoxLayout()
+        head.setSpacing(14)
+        logo = QLabel()
+        px = icons.app_icon_pixmap(128)
+        px.setDevicePixelRatio(2.0)
+        logo.setPixmap(px)
+        head.addWidget(logo)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        col.addWidget(label("ModelShelf", "h1"))
+        col.addWidget(label(f"Version {version}", "mono"))
+        col.addWidget(label("Local library for your 3D printing files", "sub"))
+        head.addLayout(col, 1)
+        lay.addLayout(head)
+
+        lay.addWidget(label("Thumbnails, search, tags and a 3D preview for your STL, 3MF, OBJ, G-code and ZIP "
+                            "downloads. Everything stays on this computer: no account, no cloud, no uploads.",
+                            "sub", wrap=True))
+
+        links = QHBoxLayout()
+        links.setSpacing(8)
+        repo = icon_button("link", REPO_URL, "GitHub repository")
+        repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(REPO_URL)))
+        issue = icon_button("bug", f"{REPO_URL}/issues", "Report a problem")
+        issue.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(REPO_URL + "/issues")))
+        links.addWidget(repo)
+        links.addWidget(issue)
+        links.addStretch()
+        lay.addLayout(links)
+        url = label(f'<a href="{REPO_URL}" style="color: {theme.C["accent"]};">{REPO_URL.split("//")[1]}</a>')
+        url.setOpenExternalLinks(True)
+        lay.addWidget(url)
+
+        lay.addWidget(hline())
+        lay.addWidget(label("ModelShelf is free for personal and other noncommercial use. If it saves you time, "
+                            "a coffee is a nice way to say thanks.", "sub", wrap=True))
+        crow = QHBoxLayout()
+        crow.addWidget(coffee_button())
+        crow.addStretch()
+        lay.addLayout(crow)
+
+        lay.addWidget(hline())
+        lic = label(f'Released under the <a href="{REPO_URL}/blob/main/LICENSE.md" style="color: '
+                    f'{theme.C["accent"]};">PolyForm Noncommercial License 1.0.0</a>. Built with Qt for Python '
+                    f'(LGPL), moderngl, NumPy and Pillow; see <a href="{REPO_URL}/blob/main/THIRD_PARTY_NOTICES.md" '
+                    f'style="color: {theme.C["accent"]};">third-party notices</a>.', "muted", wrap=True)
+        lic.setOpenExternalLinks(True)
+        lay.addWidget(lic)
+        data = QHBoxLayout()
+        data.addWidget(label("Your library data:", "muted"))
+        from ui.widgets import PathLabel
+        pl = PathLabel()
+        pl.set_path(data_folder)
+        data.addWidget(pl, 1)
+        opn = QPushButton("Open folder")
+        opn.setProperty("variant", "ghost")
+        opn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(data_folder)))
+        data.addWidget(opn)
+        lay.addLayout(data)
+
+        foot = QHBoxLayout()
+        foot.addStretch()
+        close = QPushButton("Close")
+        close.clicked.connect(self.accept)
+        close.setDefault(True)
+        foot.addWidget(close)
+        lay.addLayout(foot)

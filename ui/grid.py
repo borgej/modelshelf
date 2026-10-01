@@ -56,11 +56,8 @@ def fmt_duration(sec: float | None) -> str:
 
 
 def _font(size: float, weight=QFont.Normal, mono=False) -> QFont:
-    f = QFont(theme.MONO.split(",")[0] if mono else "Segoe UI Variable Text")
-    if not mono:
-        f.setFamilies(["Segoe UI Variable Text", "Segoe UI"])
-    else:
-        f.setFamilies(["Cascadia Mono", "Consolas"])
+    f = QFont()
+    f.setFamilies(theme.MONO_FAMILIES if mono else theme.FONT_FAMILIES)
     f.setPixelSize(int(size))
     f.setWeight(weight)
     return f

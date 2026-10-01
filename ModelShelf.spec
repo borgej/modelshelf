@@ -1,6 +1,7 @@
 # PyInstaller recipe for ModelShelf. Build with:  python build_exe.py
 import os
 import re
+import sys
 
 from PyInstaller.utils.hooks import collect_submodules
 
@@ -20,6 +21,9 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         "matplotlib", "pytest", "tkinter", "scipy",
+        # ModelShelf never opens a network connection, so Qt's network module
+        # (and the OpenSSL probing that comes with it) is left out entirely.
+        "PySide6.QtNetwork",
         "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
         "PySide6.QtQuick", "PySide6.QtQuick3D", "PySide6.QtQml", "PySide6.Qt3DCore",
         "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets", "PySide6.QtCharts",
@@ -38,5 +42,5 @@ exe = EXE(
     name=f"ModelShelf-{_version}",
     debug=False, strip=False, upx=False, runtime_tmpdir=None,
     console=_console,
-    icon="ModelShelf.ico",
+    icon="ModelShelf.ico" if sys.platform == "win32" else None,
 )
