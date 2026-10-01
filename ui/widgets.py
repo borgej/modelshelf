@@ -194,6 +194,16 @@ class PathLabel(QLabel):
             self.copied.emit(self._full)
 
 
+def open_external(target: str) -> None:
+    """Open a web address or a local file/folder with its default program."""
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QDesktopServices
+    from core.system import external_launch
+    url = QUrl(target) if "://" in target else QUrl.fromLocalFile(target)
+    with external_launch():
+        QDesktopServices.openUrl(url)
+
+
 def hline() -> QFrame:
     f = QFrame()
     f.setProperty("role", "divider")

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QHB
                                QSlider, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from core.db import Library
-from core.system import FILE_MANAGER, TRASH, find_slicers, reveal, slicer_takes_zip
+from core.system import FILE_MANAGER, TRASH, find_slicers, launch, reveal, slicer_takes_zip, stop_workers
 from core.mesh import fmt_date
 from core.scanner import Scanner, ScanStats
 from core.settings import Settings, estimate_grams, save as save_settings, slicer_name, thumbs_dir
@@ -25,7 +25,7 @@ from ui.dialogs import AboutDialog, COFFEE_URL, DuplicatesDialog, LogWindow, Set
 from ui.grid import LibraryGrid, fmt_size
 from ui.library_model import SORTS, LibraryModel, ThumbCache
 from ui.sidebar import Sidebar
-from ui.widgets import SearchBox, hline, icon_button, label, refresh_icons
+from ui.widgets import SearchBox, hline, icon_button, label, open_external, refresh_icons
 from version import __version__
 
 
@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
         self.b_about.clicked.connect(self.show_about)
         self.b_coffee = icon_button("coffee", f"Like ModelShelf? Buy me a coffee\n{COFFEE_URL}", variant="ghost")
         self.b_coffee.setProperty("icon_color", "warning")
-        self.b_coffee.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(COFFEE_URL)))
+        self.b_coffee.clicked.connect(lambda: open_external(COFFEE_URL))
         self.b_scan = icon_button("refresh", "Look for new and changed files (F5)", "Scan library", variant="primary")
         self.b_scan.setProperty("icon_color", "accent_text")
         self.b_scan.clicked.connect(self.start_scan)
@@ -497,7 +497,7 @@ class MainWindow(QMainWindow):
             return
         if name == "open":
             for it in items[:10]:
-                QDesktopServices.openUrl(QUrl.fromLocalFile(it.path))
+                open_external(it.path)
         elif name == "slicer":
             if not self.s.slicer_path or not os.path.exists(self.s.slicer_path):
                 QMessageBox.information(self, "No slicer set", "Choose your slicer in Settings first.")
@@ -507,7 +507,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Nothing to open",
                                         f"None of the selected files can be opened in {slicer_name(self.s.slicer_path)}.")
                 return
-            subprocess.Popen([self.s.slicer_path, *files], close_fds=True)
+            launch([self.s.slicer_path, *files])
             self.log(f"Opened in {slicer_name(self.s.slicer_path)}: " + ", ".join(os.path.basename(f) for f in files))
             self.statusBar().showMessage(f"Opening {len(files)} file(s) in {slicer_name(self.s.slicer_path)}…", 4000)
         elif name == "explorer":
@@ -560,7 +560,7 @@ class MainWindow(QMainWindow):
 
     def open_printer(self):
         if self.s.printer_url:
-            QDesktopServices.openUrl(QUrl(self.s.printer_url))
+            open_external(self.s.printer_url)
         else:
             self.open_settings()
 
@@ -818,7 +818,10 @@ class MainWindow(QMainWindow):
                 except (RuntimeError, TypeError):
                     pass
             self.scan.cancel()
-            self.scan.wait(15000)
+            # Closing should be quick: don't wait for workers to finish the file
+            # they are on. Everything already analysed is saved.
+            stop_workers()
+            self.scan.wait(8000)
         self.s.window_geometry = bytes(self.saveGeometry().toBase64()).decode()
         self.s.splitter_state = bytes(self.splitter.saveState().toBase64()).decode()
         save_settings(self.s)
@@ -870,6 +873,27 @@ def _viewer_selftest(path: str) -> None:
     run._selftest_viewer = v          # keep a reference while the loop runs
 
 
+def _launch_selftest() -> None:
+    """MODELSHELF_LAUNCH_TEST=1: report which library folder a child process
+    inherits, started the plain way and through core.system. Writes
+    launch-test.txt next to the log. For checking the packaged Windows build."""
+    from core.settings import data_dir
+    from core.system import child_env, external_launch
+    ps = ("Add-Type -Namespace W -Name K -MemberDefinition '[DllImport(\"kernel32.dll\", CharSet=CharSet.Unicode)] "
+          "public static extern int GetDllDirectoryW(int n, System.Text.StringBuilder b);'; "
+          "$b = New-Object System.Text.StringBuilder 1024; [void][W.K]::GetDllDirectoryW(1024, $b); "
+          "'[' + $b.ToString() + ']'")
+    cmd = ["powershell", "-NoProfile", "-Command", ps]
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    plain = subprocess.run(cmd, capture_output=True, text=True, creationflags=flags).stdout.strip()
+    with external_launch():
+        fixed = subprocess.run(cmd, capture_output=True, text=True, env=child_env(), creationflags=flags).stdout.strip()
+    (data_dir() / "launch-test.txt").write_text(
+        f"temp folder: {getattr(sys, '_MEIPASS', '(not packaged)')}\n"
+        f"child started the plain way inherits: {plain}\n"
+        f"child started through core.system inherits: {fixed}\n", encoding="utf-8")
+
+
 def run():
     from core.system import prepare_qt
     prepare_qt()
@@ -892,6 +916,9 @@ def run():
     s = load()
     tm = theme.ThemeManager(app, s.theme)
     tm.apply()
+    if os.environ.get("MODELSHELF_LAUNCH_TEST"):
+        _launch_selftest()
+        sys.exit(0)
     if os.environ.get("MODELSHELF_VIEWER_TEST"):
         _viewer_selftest(os.environ["MODELSHELF_VIEWER_TEST"])
         sys.exit(app.exec())

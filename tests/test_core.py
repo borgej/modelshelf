@@ -315,3 +315,36 @@ def test_viewer_loads_toolpath_even_with_embedded_thumbnail(tmp_path):
     p.write_text(g)
     res = formats.load_path(str(p))
     assert res.embedded_thumb and res.mesh is not None and res.mesh.triangle_count > 0
+
+
+def test_started_programs_do_not_inherit_the_private_library_path(monkeypatch):
+    """A slicer started from the packaged app must not load ModelShelf's own
+    libraries (that locked the temp folder and caused a warning on exit)."""
+    from core import system
+    monkeypatch.setattr(system, "FROZEN", True)
+    monkeypatch.setattr(system, "IS_WINDOWS", False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEIabc")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/opt/mylibs")
+    monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", "/tmp/_MEIabc")
+    env = system.child_env()
+    assert env["LD_LIBRARY_PATH"] == "/opt/mylibs"
+    assert not [k for k in env if k.startswith("_PYI_")]
+    assert env["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+    with system.external_launch():
+        assert os.environ["LD_LIBRARY_PATH"] == "/opt/mylibs"
+    assert os.environ["LD_LIBRARY_PATH"] == "/tmp/_MEIabc"     # restored for our own workers
+
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG")
+    assert "LD_LIBRARY_PATH" not in system.child_env()
+    with system.external_launch():
+        assert "LD_LIBRARY_PATH" not in os.environ
+    assert os.environ["LD_LIBRARY_PATH"] == "/tmp/_MEIabc"
+
+
+def test_unpackaged_run_leaves_the_environment_alone(monkeypatch):
+    from core import system
+    monkeypatch.setattr(system, "FROZEN", False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/keep/me")
+    assert system.child_env()["LD_LIBRARY_PATH"] == "/keep/me"
+    with system.external_launch():
+        assert os.environ["LD_LIBRARY_PATH"] == "/keep/me"

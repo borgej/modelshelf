@@ -6,6 +6,7 @@ library and behaves the same everywhere.
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import os
 import shutil
@@ -43,15 +44,114 @@ def lower_priority() -> None:
         pass
 
 
+# --------------------------------------------------------------------------- starting other programs
+
+FROZEN = bool(getattr(sys, "frozen", False))
+
+
+@contextlib.contextmanager
+def external_launch():
+    """Wrap anything that starts another program (a slicer, the file manager,
+    the web browser, a file's default app).
+
+    The packaged build unpacks itself to a temporary folder and tells the
+    system to look for libraries there first: SetDllDirectory on Windows,
+    LD_LIBRARY_PATH on Linux. Child processes inherit that. A slicer started
+    from ModelShelf would then load ModelShelf's copy of, say, the Visual C++
+    runtime, which (a) keeps those files locked, so the temporary folder cannot
+    be removed when ModelShelf exits ("Failed to remove temporary directory"),
+    and (b) may not be the version that program expects. So the search path is
+    put back to the system default for the moment the other program starts.
+    """
+    if not FROZEN:
+        yield
+        return
+    if IS_WINDOWS:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        k32.SetDllDirectoryW(None)
+        try:
+            yield
+        finally:
+            k32.SetDllDirectoryW(getattr(sys, "_MEIPASS", None))
+    else:
+        saved = os.environ.get("LD_LIBRARY_PATH")
+        orig = os.environ.get("LD_LIBRARY_PATH_ORIG")
+        if orig:
+            os.environ["LD_LIBRARY_PATH"] = orig
+        else:
+            os.environ.pop("LD_LIBRARY_PATH", None)
+        try:
+            yield
+        finally:
+            if saved is not None:
+                os.environ["LD_LIBRARY_PATH"] = saved
+
+
+def child_env() -> dict[str, str]:
+    """Environment for a program that is not part of ModelShelf: without the
+    packaging tool's private variables, and with the original library path."""
+    env = dict(os.environ)
+    if FROZEN:
+        for key in [k for k in env if k.startswith(("_PYI_", "_MEIPASS"))]:
+            del env[key]
+        # Lets another PyInstaller-built program (some slicers are) start cleanly.
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        if not IS_WINDOWS:
+            orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+            if orig:
+                env["LD_LIBRARY_PATH"] = orig
+            else:
+                env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def launch(args: list[str]) -> subprocess.Popen:
+    """Start another program, detached from ModelShelf's private libraries."""
+    with external_launch():
+        return subprocess.Popen(args, env=child_env(), close_fds=True)
+
+
+def stop_workers(timeout: float = 3.0) -> int:
+    """End ModelShelf's own scan worker processes (used when the app closes).
+
+    A worker in the middle of a large file would otherwise outlive the window
+    and keep the temporary folder in use. Results are stored per file, so
+    nothing already analysed is lost. Programs the user opened from ModelShelf
+    (slicer, file manager) are never touched: only processes running this same
+    executable are ended.
+    """
+    try:
+        import psutil
+        me = psutil.Process()
+        mine = os.path.normcase(sys.executable)
+        workers = []
+        for child in me.children(recursive=True):
+            try:
+                if os.path.normcase(child.exe()) == mine:
+                    workers.append(child)
+            except (psutil.Error, OSError):
+                continue
+        for w in workers:
+            try:
+                w.terminate()
+            except psutil.Error:
+                pass
+        psutil.wait_procs(workers, timeout=timeout)
+        return len(workers)
+    except Exception:
+        return 0
+
+
 def reveal(path: str) -> None:
     """Open the system file manager with `path` selected (or at least its folder)."""
     path = os.path.normpath(path)
     try:
         if IS_WINDOWS:
-            subprocess.Popen(["explorer", "/select,", path])
+            launch(["explorer", "/select,", path])
             return
         if IS_MAC:
-            subprocess.Popen(["open", "-R", path])
+            launch(["open", "-R", path])
             return
         # Linux: the FileManager1 D-Bus interface selects the file in Nautilus,
         # Dolphin, Nemo, Thunar… Fall back to just opening the folder.
@@ -63,9 +163,9 @@ def reveal(path: str) -> None:
                       "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems",
                       f"array:string:{uri}", "string:"]):
             if shutil.which(tool[0]):
-                if subprocess.run(tool, capture_output=True, timeout=5).returncode == 0:
+                if subprocess.run(tool, capture_output=True, timeout=5, env=child_env()).returncode == 0:
                     return
-        subprocess.Popen(["xdg-open", os.path.dirname(path)])
+        launch(["xdg-open", os.path.dirname(path)])
     except (OSError, subprocess.SubprocessError):
         pass
 

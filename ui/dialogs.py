@@ -18,7 +18,7 @@ from core.mesh import fmt_date
 from core.settings import MATERIALS, Settings
 from ui import icons, theme
 from ui.grid import fmt_size
-from ui.widgets import hline, icon_button, label
+from ui.widgets import hline, icon_button, label, open_external
 
 
 # --------------------------------------------------------------------------- slicers
@@ -451,7 +451,7 @@ def coffee_button(text: str = "Buy me a coffee") -> QPushButton:
         f" border-radius: {theme.R_MD}px; padding: 7px 14px; font-weight: 700; }}"
         "QPushButton:hover { background: #ffe433; }"
         "QPushButton:pressed { background: #f0cf00; }")
-    b.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(COFFEE_URL)))
+    b.clicked.connect(lambda: open_external(COFFEE_URL))
     return b
 
 
@@ -486,15 +486,15 @@ class AboutDialog(QDialog):
         links = QHBoxLayout()
         links.setSpacing(8)
         repo = icon_button("link", REPO_URL, "GitHub repository")
-        repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(REPO_URL)))
+        repo.clicked.connect(lambda: open_external(REPO_URL))
         issue = icon_button("bug", f"{REPO_URL}/issues", "Report a problem")
-        issue.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(REPO_URL + "/issues")))
+        issue.clicked.connect(lambda: open_external(REPO_URL + "/issues"))
         links.addWidget(repo)
         links.addWidget(issue)
         links.addStretch()
         lay.addLayout(links)
         url = label(f'<a href="{REPO_URL}" style="color: {theme.C["accent"]};">{REPO_URL.split("//")[1]}</a>')
-        url.setOpenExternalLinks(True)
+        url.linkActivated.connect(open_external)
         lay.addWidget(url)
 
         lay.addWidget(hline())
@@ -510,7 +510,7 @@ class AboutDialog(QDialog):
                     f'{theme.C["accent"]};">PolyForm Noncommercial License 1.0.0</a>. Built with Qt for Python '
                     f'(LGPL), moderngl, NumPy and Pillow; see <a href="{REPO_URL}/blob/main/THIRD_PARTY_NOTICES.md" '
                     f'style="color: {theme.C["accent"]};">third-party notices</a>.', "muted", wrap=True)
-        lic.setOpenExternalLinks(True)
+        lic.linkActivated.connect(open_external)
         lay.addWidget(lic)
         data = QHBoxLayout()
         data.addWidget(label("Your library data:", "muted"))
@@ -520,7 +520,7 @@ class AboutDialog(QDialog):
         data.addWidget(pl, 1)
         opn = QPushButton("Open folder")
         opn.setProperty("variant", "ghost")
-        opn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(data_folder)))
+        opn.clicked.connect(lambda: open_external(data_folder))
         data.addWidget(opn)
         lay.addLayout(data)
 
