@@ -1,19 +1,70 @@
 name: Release
 
-# Push a tag like v0.2.0 to build ModelShelf for Windows and Linux and publish
-# both as one GitHub release. "Run workflow" in the Actions tab builds the same
-# things without releasing (the builds are attached to the run as artifacts).
+# Publishes ModelShelf for Windows and Linux as a GitHub release.
+#
+# It starts by itself when the version number in version.py changes on main:
+# the release and its tag (v1.2.3) are created for that version, so there is
+# nothing to run by hand. A version that already has a tag is left alone.
+#
+# Two other ways to start it:
+#   * push a tag like v1.2.3 yourself (the version is taken from the tag)
+#   * "Run workflow" in the Actions tab: builds the version in version.py again
+#     and refreshes the files of that release
 on:
   push:
+    branches: [main]
+    paths: [version.py]
     tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# Never run two releases of the same ref at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    name: Decide what to release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      tag: ${{ steps.pick.outputs.tag }}
+      release: ${{ steps.pick.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: pick
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+            version="${tag#v}"
+            release=true
+          else
+            version="$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' version.py)"
+            tag="v$version"
+            release=true
+            if [ "$GITHUB_EVENT_NAME" = "push" ] && \
+               git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "::notice::Version $version already has the tag $tag. Nothing to release."
+              release=false
+            fi
+          fi
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Version must look like 1.2.3, got '$version'"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "version=$version tag=$tag release=$release"
+
   build:
     name: Build (${{ matrix.name }})
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +80,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
+      MODELSHELF_VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,18 +101,14 @@ jobs:
       - name: Install Python packages
         run: pip install -r requirements.txt pyinstaller pytest
 
-      - name: Take the version from the tag
-        if: github.ref_type == 'tag'
+      - name: Set the version
         shell: python
         run: |
-          import os, re, sys
-          tag = os.environ["GITHUB_REF_NAME"]
-          m = re.fullmatch(r"v(\d+\.\d+\.\d+)", tag)
-          if not m:
-              sys.exit(f"Tag must look like v1.2.3, got {tag}")
+          import os
+          version = os.environ["MODELSHELF_VERSION"]
           with open("version.py", "w", encoding="utf-8") as fh:
-              fh.write(f'__version__ = "{m.group(1)}"\n')
-          print("version", m.group(1))
+              fh.write(f'__version__ = "{version}"\n')
+          print("version", version)
 
       - name: Run tests
         run: python -m pytest -q tests
@@ -77,8 +125,8 @@ jobs:
 
   release:
     name: Publish release
-    needs: build
-    if: github.ref_type == 'tag'
+    needs: [prepare, build]
+    if: needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -89,18 +137,21 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           ls -la dist
-          tag="${{ github.ref_name }}"
           repo="${{ github.repository }}"
-          # A tag that is pushed again (for example after history was rewritten)
-          # must not fail the run: refresh the files of the existing release.
-          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            echo "Release $tag already exists: replacing its files."
-            gh release upload "$tag" dist/* --repo "$repo" --clobber
+          # A version that is released again (a tag pushed twice, or "Run
+          # workflow") must not fail the run: refresh the files instead.
+          if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
+            echo "Release $TAG already exists: replacing its files."
+            gh release upload "$TAG" dist/* --repo "$repo" --clobber
           else
-            gh release create "$tag" dist/* \
+            # Creates the tag too when it does not exist yet, on this commit.
+            gh release create "$TAG" dist/* \
               --repo "$repo" \
-              --title "ModelShelf ${GITHUB_REF_NAME#v}" \
+              --target "$GITHUB_SHA" \
+              --title "ModelShelf $VERSION" \
               --generate-notes
           fi

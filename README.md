@@ -243,15 +243,19 @@ is always made for the system it runs on.
 
 ### How a release is made
 
-Pushing a tag that looks like `v1.2.3` starts the
-[Release workflow](.github/workflows/release.yml). It runs the tests, builds
-ModelShelf on a clean Windows machine and a clean Linux machine, and publishes
-both on the releases page.
+Releases make themselves. When the version number in `version.py` changes on
+`main`, the [Release workflow](.github/workflows/release.yml) runs the tests,
+builds ModelShelf on a clean Windows machine and a clean Linux machine, creates
+the tag (for example `v1.2.3`) and publishes both builds on the releases page.
+Pushes that leave the version number alone, such as a README change, do not
+create a release.
 
-```
-git tag v1.2.3
-git push origin v1.2.3
-```
+`build_exe.py` raises the version number each time it builds, so the usual flow
+is: build, commit, push.
+
+The workflow can also be started by pushing a tag by hand, or with **Run
+workflow** in the Actions tab, which rebuilds the current version and refreshes
+the files of its release.
 
 ### How the code is laid out
 
