@@ -18,7 +18,7 @@ from core.mesh import fmt_date
 from core.settings import MATERIALS, Settings
 from ui import icons, theme
 from ui.grid import fmt_size
-from ui.widgets import hline, icon_button, label, open_external
+from ui.widgets import guard_wheel, hline, icon_button, label, open_external
 
 
 # --------------------------------------------------------------------------- slicers
@@ -169,6 +169,16 @@ class SettingsDialog(QDialog):
         foot.addWidget(bb)
         outer.addLayout(foot)
         self.rerender = False
+        # Each section is its own form; give them one shared label width so all
+        # the fields start at the same x.
+        forms = body.findChildren(QFormLayout)
+        labels = [f.itemAt(r, QFormLayout.LabelRole).widget() for f in forms for r in range(f.rowCount())
+                  if f.itemAt(r, QFormLayout.LabelRole) is not None]
+        width = max((lb.sizeHint().width() for lb in labels if lb is not None), default=0)
+        for lb in labels:
+            if lb is not None:
+                lb.setMinimumWidth(width)
+        guard_wheel(self)
 
     def _paint_color_btn(self):
         self.color_btn.setText(f"  {self._color.upper()}")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QLineEdit, QPushButton,
                                QSizePolicy, QToolButton, QWidget)
 
@@ -202,6 +202,38 @@ def open_external(target: str) -> None:
     url = QUrl(target) if "://" in target else QUrl.fromLocalFile(target)
     with external_launch():
         QDesktopServices.openUrl(url)
+
+
+class _WheelGuard(QObject):
+    """Stops combo boxes and number fields from grabbing the mouse wheel.
+
+    By default Qt changes the value of whichever such field is under the
+    pointer, so scrolling a long form stops as soon as the pointer passes over
+    one, and silently changes a setting instead. With the guard the wheel
+    scrolls the page; it only changes a value in a field the user has clicked
+    into first.
+    """
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and not obj.hasFocus():
+            event.ignore()          # not handled here: Qt passes it on to the scroll area
+            return True
+        return False
+
+
+_wheel_guard = None
+
+
+def guard_wheel(root: QWidget) -> None:
+    """Apply the wheel guard to every combo box and spin box inside `root`."""
+    from PySide6.QtWidgets import QAbstractSpinBox, QComboBox
+    global _wheel_guard
+    if _wheel_guard is None:
+        _wheel_guard = _WheelGuard()
+    for w in root.findChildren(QComboBox) + root.findChildren(QAbstractSpinBox):
+        # StrongFocus: hovering plus scrolling must not give the field focus either.
+        w.setFocusPolicy(Qt.StrongFocus)
+        w.installEventFilter(_wheel_guard)
 
 
 def hline() -> QFrame:
