@@ -1,0 +1,62 @@
+name: Release
+
+# Push a tag like v0.2.0 to build ModelShelf and publish it as a GitHub release.
+# "Run workflow" in the Actions tab builds the same thing without releasing
+# (the .exe is attached to the run as an artifact).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller pytest
+
+      - name: Take the version from the tag
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag must look like v1.2.3, got ${{ github.ref_name }}" }
+          Set-Content version.py "__version__ = `"$version`"" -Encoding utf8
+          "MODELSHELF_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Run tests
+        run: python -m pytest -q tests
+
+      - name: Build the .exe
+        run: python build_exe.py --no-bump
+
+      - name: Attach the build to this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModelShelf-windows
+          path: dist/ModelShelf*.exe
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "dist/ModelShelf-$env:MODELSHELF_VERSION.exe" `
+            "dist/ModelShelf.exe" `
+            --title "ModelShelf $env:MODELSHELF_VERSION" `
+            --generate-notes

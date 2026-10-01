@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+venv/
+.venv/
+
+# PyInstaller output
+build/
+dist/
+*.manifest
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local data and scratch files
+*.log
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.claude/
