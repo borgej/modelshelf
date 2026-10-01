@@ -24,6 +24,21 @@ protected your PC" the first time. Choose **More info** and then **Run anyway**.
 Debian 12, Fedora 36, Mint 21 and later). The `README.txt` inside the download
 lists the few system libraries it expects, in case it does not start.
 
+## Support ModelShelf
+
+ModelShelf is free, and I build it in my spare time. If you use it and like it,
+please consider buying me a coffee. It keeps the project going and tells me the
+work is worth continuing.
+
+<a href="https://buymeacoffee.com/beejeey"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="48"></a>
+
+You will find the same link inside the app, behind the cup button in the top bar
+and in the About window.
+
+Not in a position to chip in? A star on this repository, or telling another maker
+about ModelShelf, helps just as much. Found a bug or missing a feature? Open an
+[issue](https://github.com/borgej/modelshelf/issues).
+
 ## What it does
 
 ### See every model, not just file names
@@ -246,15 +261,6 @@ git push origin v1.2.3
 * `ui/` is the Qt interface.
 * `tests/` covers the format readers and the scanner's safety rules.
 * `tools/make_screenshots.py` regenerates the pictures in this README.
-
-## Support the project
-
-ModelShelf is free for personal use. If it saves you time and you would like to
-say thanks, you can [buy me a coffee](https://buymeacoffee.com/beejeey). The same
-link is in the app, behind the cup button in the top bar and in the About window.
-
-Found a bug or missing a feature? Open an
-[issue](https://github.com/borgej/modelshelf/issues).
 
 ## License
 
