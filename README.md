@@ -138,6 +138,65 @@ drive.
 * A graphics card with OpenGL 3.3, which covers practically anything made in the
   last ten years. Without it the app still works, but shows no rendered previews.
 
+## Under the hood
+
+ModelShelf is a native desktop application written in Python. There is no web
+view, no bundled browser and no background service.
+
+### Built with
+
+| Part | Technology |
+| :-- | :-- |
+| Language | Python 3.13 |
+| User interface | Qt 6 through [PySide6](https://doc.qt.io/qtforpython/) (Qt Widgets, with a custom painted card grid) |
+| 3D rendering | OpenGL 3.3 core profile through [moderngl](https://github.com/moderngl/moderngl), with shaders written in GLSL |
+| Mesh maths | [NumPy](https://numpy.org/) |
+| Images | [Pillow](https://python-pillow.org/) |
+| Library database | SQLite (from the Python standard library), in WAL mode |
+| Icons | Hand drawn SVG, tinted at run time with Qt SVG |
+| Packaging | [PyInstaller](https://pyinstaller.org/), one self-contained file per system |
+| Tests and builds | pytest and GitHub Actions |
+| Small helpers | [psutil](https://github.com/giampaolo/psutil) for low priority scanning, [Send2Trash](https://github.com/arsenetar/send2trash) for the Recycle Bin |
+
+### File formats
+
+All file readers are written for this project, so there is no dependency on a
+mesh library or a CAD kernel.
+
+| Format | What is read |
+| :-- | :-- |
+| STL | Binary and ASCII |
+| 3MF | Meshes, components and transforms, build plates, base materials and colour groups, plus the Bambu Studio, OrcaSlicer and ElegooSlicer extensions for filament colours, painted colours, plates and slicing results |
+| OBJ | Vertices and faces, with polygons split into triangles |
+| G-code | Embedded thumbnails, print time and filament use, and the extrusion moves themselves for the toolpath preview. Tested mostly with PrusaSlicer output; the layer markers of OrcaSlicer, Bambu Studio and Cura are recognised too |
+| ZIP | The models inside, read straight from the archive |
+| STEP, F3D, SCAD and other CAD files | Listed only |
+
+### How it works
+
+* **Scanning** runs in a pool of up to twelve worker processes, leaving two CPU
+  cores free, at low priority so the PC stays responsive. Each file is read once, and that
+  single read produces the content hash, the geometry figures and the thumbnail.
+* **Rescans are incremental.** A file whose size and modification time have not
+  changed is not opened again, so checking a library of several thousand files
+  takes about a second.
+* **Thumbnails** are rendered off screen on the graphics card, with 8x
+  multisampling on top of 2x supersampling, and stored as 384 pixel PNG files
+  with a transparent background. That is why one set of thumbnails works in both
+  the dark and the light theme.
+* **The 3D preview** uses the same shaders as the thumbnails, drawn live in the
+  window.
+* **Duplicates** are found by SHA-256 of the file content. The same hash lets
+  ModelShelf recognise a file that was moved or renamed and keep its tags.
+* **Sizes** come from the mesh itself: bounding box, enclosed volume and surface
+  area. The filament estimate is a solid shell (surface area times wall
+  thickness) plus the chosen infill for the rest.
+* **The card grid** is painted by a Qt item delegate instead of being built from
+  widgets, so only the cards on screen cost anything and scrolling stays smooth
+  with thousands of models.
+* **Limits:** very large meshes are thinned to three million triangles for
+  drawing, and files over 600 MB are listed and hashed but not previewed.
+
 ## Run from source
 
 ```
