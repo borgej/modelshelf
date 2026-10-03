@@ -209,15 +209,28 @@ jobs:
         continue-on-error: true
         run: |
           : > virustotal.md
+          first=1
           for f in "dist/ModelShelf-$VERSION.exe" dist/ModelShelf-"$VERSION"-linux-*.tar.gz; do
             [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            # The free API allows four requests a minute; each file takes two.
+            [ "$first" = 1 ] || sleep 35
+            first=0
             sha="$(sha256sum "$f" | cut -d' ' -f1)"
             # Files over 32 MB need a one-time upload address.
-            url="$(curl -sS --fail -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)"
-            curl -sS --fail -H "x-apikey: $VT_API_KEY" -F "file=@$f" "$url" >/dev/null
-            echo "* [$(basename "$f")](https://www.virustotal.com/gui/file/$sha)" >> virustotal.md
-            echo "uploaded $(basename "$f")"
+            url="$(curl -sS --fail --retry 2 --retry-delay 20 -H "x-apikey: $VT_API_KEY" \
+                   https://www.virustotal.com/api/v3/files/upload_url | jq -r '.data // empty')" || url=""
+            if [ -n "$url" ] && curl -sS --fail --max-time 900 -H "x-apikey: $VT_API_KEY" \
+                 -F "file=@$f" "$url" >/dev/null; then
+              echo "* [$name](https://www.virustotal.com/gui/file/$sha) (the report appears a few minutes after the release)" >> virustotal.md
+              echo "uploaded $name"
+            else
+              # Say so in the release notes rather than leaving the scan out silently.
+              echo "* $name: the upload to VirusTotal failed for this release" >> virustotal.md
+              echo "::warning::VirusTotal upload failed for $name"
+            fi
           done
+          cat virustotal.md
 
       - name: Write the verification notes
         run: |
@@ -256,6 +269,13 @@ jobs:
           if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
             echo "Release $TAG already exists: replacing its files."
             gh release upload "$TAG" dist/* --repo "$repo" --clobber
+            # The files are new builds, so their checksums and scan results
+            # changed: replace the verification part of the notes and keep the
+            # changelog that follows it.
+            gh release view "$TAG" --repo "$repo" --json body -q .body > old-notes.md
+            awk '/^## What.s Changed|^\*\*Full Changelog\*\*/ {keep=1} keep' old-notes.md > changelog.md
+            cat notes.md changelog.md > new-notes.md
+            gh release edit "$TAG" --repo "$repo" --notes-file new-notes.md
           else
             # Creates the tag too when it does not exist yet, on this commit.
             gh release create "$TAG" dist/* \
