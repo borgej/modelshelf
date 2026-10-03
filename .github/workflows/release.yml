@@ -18,7 +18,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write          # create the release and its tag
+  id-token: write          # sign the build provenance (see the attest step)
+  attestations: write      # store that signed statement with the repository
 
 # Never run two releases of the same ref at once.
 concurrency:
@@ -116,6 +118,46 @@ jobs:
       - name: Build
         run: python build_exe.py --no-bump
 
+      # Microsoft Defender is the antivirus most Windows users have. A build it
+      # flags must never be published. If the scanner cannot run on the build
+      # machine, that is recorded honestly instead of being reported as clean.
+      - name: Scan the build with Microsoft Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force reports | Out-Null
+          $report = "reports/defender.txt"
+          $mp = Join-Path $env:ProgramFiles "Windows Defender\MpCmdRun.exe"
+          if (-not (Test-Path $mp)) {
+            "not run (Microsoft Defender is not available on the build machine)" | Set-Content $report
+            Write-Host "::warning::Microsoft Defender not found, scan skipped"
+            exit 0
+          }
+          & $mp -SignatureUpdate *> $null
+          $sig = try { (Get-MpComputerStatus).AntivirusSignatureVersion } catch { "unknown" }
+          $exe = Get-ChildItem dist/ModelShelf-*.exe | Select-Object -First 1
+          & $mp -Scan -ScanType 3 -File $exe.FullName -DisableRemediation
+          $code = $LASTEXITCODE
+          if ($code -eq 2) {
+            Write-Host "::error::Microsoft Defender reports a threat in $($exe.Name). The release is stopped."
+            exit 1
+          } elseif ($code -eq 0) {
+            "no threats found in $($exe.Name) (definitions $sig)" | Set-Content $report
+          } else {
+            "not run (the scanner returned code $code)" | Set-Content $report
+            Write-Host "::warning::Microsoft Defender scan did not complete (code $code)"
+          }
+          Get-Content $report
+          exit 0
+
+      - name: Attach the scan report to this run
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-report
+          path: reports/
+          if-no-files-found: warn
+
       - name: Attach the build to this run
         uses: actions/upload-artifact@v4
         with:
@@ -128,20 +170,87 @@ jobs:
     needs: [prepare, build]
     if: needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      # Optional. Add a free VirusTotal API key as the repository secret
+      # VT_API_KEY to have every release scanned by about 70 antivirus engines.
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: ModelShelf-*
           path: dist
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: scan-report
+          path: reports
+
+      - name: Write checksums
+        run: |
+          cd dist
+          sha256sum ModelShelf* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # A signed statement, kept in a public transparency log, that these exact
+      # files were built by this workflow from this commit. Anyone can check it:
+      #   gh attestation verify ModelShelf.exe --repo borgej/modelshelf
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/ModelShelf*
+
+      - name: Upload to VirusTotal
+        if: env.VT_API_KEY != ''
+        continue-on-error: true
+        run: |
+          : > virustotal.md
+          for f in "dist/ModelShelf-$VERSION.exe" dist/ModelShelf-"$VERSION"-linux-*.tar.gz; do
+            [ -f "$f" ] || continue
+            sha="$(sha256sum "$f" | cut -d' ' -f1)"
+            # Files over 32 MB need a one-time upload address.
+            url="$(curl -sS --fail -H "x-apikey: $VT_API_KEY" https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)"
+            curl -sS --fail -H "x-apikey: $VT_API_KEY" -F "file=@$f" "$url" >/dev/null
+            echo "* [$(basename "$f")](https://www.virustotal.com/gui/file/$sha)" >> virustotal.md
+            echo "uploaded $(basename "$f")"
+          done
+
+      - name: Write the verification notes
+        run: |
+          repo="$GITHUB_REPOSITORY"
+          defender="not run"
+          [ -f reports/defender.txt ] && defender="$(tr -d '\r' < reports/defender.txt | head -1)"
+          {
+            echo "## Verify this download"
+            echo
+            echo "These files were built by GitHub Actions from the public source at commit \`${GITHUB_SHA:0:7}\`, not on anyone's own computer. [Build log](${GITHUB_SERVER_URL}/${repo}/actions/runs/${GITHUB_RUN_ID})."
+            echo
+            echo "* **Built from this source:** \`gh attestation verify ModelShelf.exe --repo ${repo}\` checks the signed build record."
+            echo "* **Microsoft Defender:** ${defender}"
+            if [ -s virustotal.md ]; then
+              echo "* **VirusTotal reports:**"
+              sed 's/^/  /' virustotal.md
+            fi
+            echo
+            echo "SHA-256 checksums (also in \`SHA256SUMS.txt\`):"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+            echo
+            echo "How to check, and what these checks can and cannot tell you: [Is it safe to run?](${GITHUB_SERVER_URL}/${repo}#is-it-safe-to-run)"
+            echo
+          } > notes.md
+          cat notes.md
+
       - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           ls -la dist
-          repo="${{ github.repository }}"
+          repo="$GITHUB_REPOSITORY"
           # A version that is released again (a tag pushed twice, or "Run
           # workflow") must not fail the run: refresh the files instead.
           if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
@@ -153,5 +262,6 @@ jobs:
               --repo "$repo" \
               --target "$GITHUB_SHA" \
               --title "ModelShelf $VERSION" \
+              --notes "$(cat notes.md)" \
               --generate-notes
           fi

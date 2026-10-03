@@ -1,5 +1,10 @@
 # ModelShelf
 
+[![Tests](https://github.com/borgej/modelshelf/actions/workflows/tests.yml/badge.svg)](https://github.com/borgej/modelshelf/actions/workflows/tests.yml)
+[![Security scan](https://github.com/borgej/modelshelf/actions/workflows/security.yml/badge.svg)](https://github.com/borgej/modelshelf/actions/workflows/security.yml)
+[![Release build](https://github.com/borgej/modelshelf/actions/workflows/release.yml/badge.svg)](https://github.com/borgej/modelshelf/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/borgej/modelshelf?label=latest%20release)](https://github.com/borgej/modelshelf/releases/latest)
+
 A local library for your 3D printing files. Point it at the folders where your
 downloads pile up and it gives you thumbnails, search, tags and a real 3D
 preview for every STL, 3MF, OBJ, G-code file and ZIP download.
@@ -19,10 +24,73 @@ Older versions are on the [releases page](https://github.com/borgej/modelshelf/r
 
 **Windows:** the build is not code signed, so SmartScreen may show "Windows
 protected your PC" the first time. Choose **More info** and then **Run anyway**.
+See [Is it safe to run?](#is-it-safe-to-run) for how to verify the download.
 
 **Linux:** built on Ubuntu 22.04, so it needs glibc 2.35 or newer (Ubuntu 22.04,
 Debian 12, Fedora 36, Mint 21 and later). The `README.txt` inside the download
 lists the few system libraries it expects, in case it does not start.
+
+## Is it safe to run?
+
+Being careful with a program from someone you do not know is sensible. No scan
+can prove that software is harmless, so instead of asking you to trust a badge,
+ModelShelf is set up so you can check things yourself.
+
+**The downloads are built in the open.** Every release is built by GitHub
+Actions on GitHub's own machines, straight from the source code in this
+repository. Nothing is built on a private computer and uploaded by hand. The
+[build log](https://github.com/borgej/modelshelf/actions/workflows/release.yml) of every release is public.
+
+**What is checked automatically:**
+
+| Check | What it tells you |
+| :-- | :-- |
+| Build provenance | A signed record, stored in a public transparency log, that a file was built by this repository's workflow from one specific commit. It cannot be forged by replacing the file afterwards. |
+| SHA-256 checksums | Each release lists a fingerprint for every file, so you can see that your download is the file that was published. |
+| Microsoft Defender | The Windows build is scanned before it is published. A build that Defender flags is not released. |
+| CodeQL | GitHub's code scanner reads the source for security bugs on every change and once a week. |
+| pip-audit | The libraries ModelShelf uses are compared with the public database of known vulnerabilities, on every change and once a week. |
+
+The result of each check for a release is written in its
+[release notes](https://github.com/borgej/modelshelf/releases). These checks apply from version 0.2.3; earlier
+releases do not have them.
+
+**Check your download yourself:**
+
+Compare the fingerprint with the one in the release notes. On Windows, in
+PowerShell:
+
+```
+Get-FileHash ModelShelf.exe -Algorithm SHA256
+```
+
+On Linux:
+
+```
+sha256sum ModelShelf-linux-x86_64.tar.gz
+```
+
+Confirm that the file was built from this source code, with the
+[GitHub CLI](https://cli.github.com/):
+
+```
+gh attestation verify ModelShelf.exe --repo borgej/modelshelf
+```
+
+**What these checks do not tell you.** They show that the download matches the
+public source and that known malware scanners and code scanners found nothing.
+They are not a review of every line by an independent party. The firmest check
+is still the one open source allows: read the code, or [build it
+yourself](#run-from-source) and compare.
+
+**Why Windows warns about it anyway.** The build is not code signed, because a
+signing certificate costs money. That is the only reason for the SmartScreen
+message, and it says nothing about what the program does.
+
+By design, ModelShelf contains no code that connects to the internet, never
+changes your model files (it only moves one to the Recycle Bin when you ask),
+and keeps its own data in one folder on your PC. See
+[Your files stay yours](#your-files-stay-yours).
 
 ## Support ModelShelf
 

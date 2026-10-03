@@ -1,0 +1,46 @@
+name: Security
+
+# Two checks of the source, on every change and once a week (new weaknesses are
+# published all the time, so code that was fine last month is checked again):
+#   * CodeQL reads the Python code and looks for security bugs.
+#   * pip-audit compares the libraries ModelShelf uses against the public
+#     database of known vulnerabilities.
+# Findings show up under the repository's Security tab.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: Code scan (CodeQL)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:python
+
+  dependencies:
+    name: Known vulnerabilities in libraries (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt
