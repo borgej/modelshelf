@@ -101,7 +101,34 @@ jobs:
             libfontconfig1 binutils
 
       - name: Install Python packages
-        run: pip install -r requirements.txt pyinstaller pytest
+        run: pip install -r requirements.txt pytest
+
+      # PyInstaller ships a ready-made start-up stub that ends up inside every
+      # program packaged with it, including a lot of malware. A few antivirus
+      # engines therefore flag anything containing that exact stub. Compiling
+      # the stub here, from PyInstaller's source, gives ModelShelf its own.
+      # If compiling is not possible, the stock one is used and the build goes on.
+      - name: Install PyInstaller with a freshly compiled bootloader (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PYINSTALLER_COMPILE_BOOTLOADER: "1"
+        run: |
+          New-Item -ItemType Directory -Force reports | Out-Null
+          pip install --no-binary pyinstaller pyinstaller
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::Could not compile the PyInstaller bootloader, using the stock one"
+            pip install pyinstaller
+            "the stock PyInstaller one" | Set-Content reports/bootloader.txt
+          } else {
+            "compiled from source during this build" | Set-Content reports/bootloader.txt
+          }
+          Get-Content reports/bootloader.txt
+          exit 0
+
+      - name: Install PyInstaller (Linux)
+        if: runner.os != 'Windows'
+        run: pip install pyinstaller
 
       - name: Set the version
         shell: python
@@ -237,6 +264,8 @@ jobs:
           repo="$GITHUB_REPOSITORY"
           defender="not run"
           [ -f reports/defender.txt ] && defender="$(tr -d '\r' < reports/defender.txt | head -1)"
+          bootloader=""
+          [ -f reports/bootloader.txt ] && bootloader="$(tr -d '\r' < reports/bootloader.txt | head -1)"
           {
             echo "## Verify this download"
             echo
@@ -244,9 +273,11 @@ jobs:
             echo
             echo "* **Built from this source:** \`gh attestation verify ModelShelf.exe --repo ${repo}\` checks the signed build record."
             echo "* **Microsoft Defender:** ${defender}"
+            [ -n "$bootloader" ] && echo "* **Windows start-up stub (bootloader):** ${bootloader}"
             if [ -s virustotal.md ]; then
               echo "* **VirusTotal reports:**"
               sed 's/^/  /' virustotal.md
+              echo "  One or two of the roughly 70 engines often flag programs packaged with PyInstaller. See the link below for how to read a report."
             fi
             echo
             echo "SHA-256 checksums (also in \`SHA256SUMS.txt\`):"

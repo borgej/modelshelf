@@ -50,10 +50,11 @@ repository. Nothing is built on a private computer and uploaded by hand. The
 | Microsoft Defender | The Windows build is scanned before it is published. A build that Defender flags is not released. |
 | CodeQL | GitHub's code scanner reads the source for security bugs on every change and once a week. |
 | pip-audit | The libraries ModelShelf uses are compared with the public database of known vulnerabilities, on every change and once a week. |
+| VirusTotal | Every release file is uploaded to [VirusTotal](https://www.virustotal.com/), where about 70 antivirus engines scan it. The reports are linked from the release notes. |
 
 The result of each check for a release is written in its
-[release notes](https://github.com/borgej/modelshelf/releases). These checks apply from version 0.2.3; earlier
-releases do not have them.
+[release notes](https://github.com/borgej/modelshelf/releases). These checks apply from version 0.2.3
+(VirusTotal from 0.2.4); earlier releases do not have them.
 
 **Check your download yourself:**
 
@@ -76,6 +77,16 @@ Confirm that the file was built from this source code, with the
 ```
 gh attestation verify ModelShelf.exe --repo borgej/modelshelf
 ```
+
+**Reading a VirusTotal report.** A report that says 1 or 2 out of about 70 is
+normal for this kind of program and not a sign that something is wrong. The
+Windows download is packaged with PyInstaller, a tool that is also used to
+package malware, and a few small engines flag everything made with it. Look at
+which engines react and what the well known ones (Microsoft, Kaspersky,
+BitDefender, ESET, Malwarebytes and so on) say. The Linux download is built from
+exactly the same code without that Windows wrapper, so its report is a useful
+comparison. If a well known engine ever flags a ModelShelf release, please
+[open an issue](https://github.com/borgej/modelshelf/issues).
 
 **What these checks do not tell you.** They show that the download matches the
 public source and that known malware scanners and code scanners found nothing.
